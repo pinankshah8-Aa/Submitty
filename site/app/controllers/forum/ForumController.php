@@ -768,6 +768,8 @@ class ForumController extends AbstractController {
             return $this->core->getOutput()->renderJsonFail("Thread is locked");
         }
 
+        $original_edit_state = $this->getForumEditState($thread, $post);
+
         $status_edit_thread = true;
         $did_edit_thread = false;
         if ($thread->getFirstPost()->getId() === $post->getId()) {
@@ -788,6 +790,11 @@ class ForumController extends AbstractController {
         if (count($message) > 0) {
             return $this->core->getOutput()->renderJsonFail(join(" ", $message));
         }
+
+        $is_category_only_edit = ForumUtils::isCategoryOnlyEdit(
+            $original_edit_state,
+            $this->getForumEditState($thread, $post)
+        );
 
         $type = "";
         $full_course_name = $this->core->getFullCourseName();
@@ -814,8 +821,10 @@ class ForumController extends AbstractController {
             'reply_level' => $post->getReplyLevel(),
             'post_box_id' => 1,
         ]);
-        $event = ['component' => 'forum', 'metadata' => $metadata, 'content' => $content, 'subject' => $subject, 'recipient' => $post->getAuthor()->getId(), 'preference' => 'all_modifications_forum'];
-        $this->core->getNotificationFactory()->onPostModified($event);
+        if (!$is_category_only_edit) {
+            $event = ['component' => 'forum', 'metadata' => $metadata, 'content' => $content, 'subject' => $subject, 'recipient' => $post->getAuthor()->getId(), 'preference' => 'all_modifications_forum'];
+            $this->core->getNotificationFactory()->onPostModified($event);
+        }
         $this->core->getCourseEntityManager()->flush();
 
         return $this->core->getOutput()->renderJsonSuccess(['type' => $type]);
@@ -1012,7 +1021,44 @@ class ForumController extends AbstractController {
     }
 
     /**
-     *
+     * @return array{
+     *     title: string,
+     *     status: int,
+     *     lock_date: ?int,
+     *     pinned_expiration: int,
+     *     content: string,
+     *     anonymous: bool,
+     *     render_markdown: bool,
+     *     attachments: string[],
+     *     categories: int[]
+     * }
+     */
+    private function getForumEditState(Thread $thread, Post $post): array {
+        $categories = $thread->getCategories()
+            ->map(fn($category) => $category->getId())
+            ->toArray();
+        sort($categories);
+
+        $attachments = $post->getAttachments()
+            ->filter(fn($attachment) => $attachment->isCurrent())
+            ->map(fn($attachment) => $attachment->getFileName())
+            ->toArray();
+        sort($attachments);
+
+        return [
+            'title' => $thread->getTitle(),
+            'status' => $thread->getStatus(),
+            'lock_date' => $thread->getLockDate()?->getTimestamp(),
+            'pinned_expiration' => $thread->getPinnedExpiration()->getTimestamp(),
+            'content' => $post->getContent(),
+            'anonymous' => $post->isAnonymous(),
+            'render_markdown' => $post->isRenderMarkdown(),
+            'attachments' => $attachments,
+            'categories' => $categories,
+        ];
+    }
+
+    /**
      * @param Thread $thread
      * @return bool true iff successful
      */

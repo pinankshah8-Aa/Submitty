@@ -66,6 +66,24 @@ class ForumUtils {
         return true;
     }
 
+    /**
+     * @param array<string, mixed> $original_state
+     * @param array<string, mixed> $updated_state
+     */
+    public static function isCategoryOnlyEdit(array $original_state, array $updated_state): bool {
+        $original_categories = $original_state['categories'];
+        $updated_categories = $updated_state['categories'];
+        sort($original_categories);
+        sort($updated_categories);
+
+        if ($original_categories === $updated_categories) {
+            return false;
+        }
+
+        unset($original_state['categories'], $updated_state['categories']);
+        return $original_state === $updated_state;
+    }
+
     public static function getDisplayName($anonymous, $real_name) {
         if ($anonymous) {
             return "Anonymous";
